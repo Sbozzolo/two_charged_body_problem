@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
+"""Solve the Newtonian two body problem with charges and radiation reaction.
+Extract gravitational waves using the quadrupole approximation.
+
+"""
+
+# This package is a single-file module, so we adopt the unconventional choice
+# of putting everything in the __init__
 
 import numpy as np
 from scipy.integrate import odeint
-
-# Two body problem with charge, circular orbit.
 
 
 class two_charged_body_problem:
@@ -24,16 +29,15 @@ class two_charged_body_problem:
     G_CGS = 6.673e-8  # Gravitational constant
     M_SOL_CGS = 1.98892e33  # Solar mass
 
-    def __init__(
-            self,
-            mass_ratio=1,
-            lambda1=0,
-            lambda2=0,
-            output_in_cgs=False,
-            total_mass=1,
-            enable_em_dipole_radiation_reaction=True,
-            enable_em_quadrupole_radiation_reaction=True,
-            enable_gw_quadrupole_radiation_reaction=True):
+    def __init__(self,
+                 mass_ratio=1,
+                 lambda1=0,
+                 lambda2=0,
+                 output_in_cgs=False,
+                 total_mass=1,
+                 enable_em_dipole_radiation_reaction=True,
+                 enable_em_quadrupole_radiation_reaction=True,
+                 enable_gw_quadrupole_radiation_reaction=True):
 
         self.output_in_cgs = output_in_cgs
 
@@ -60,7 +64,7 @@ class two_charged_body_problem:
         # Enable only some of the energy-loss mechanisms
         self.pemd = 1 if enable_em_dipole_radiation_reaction else 0
         self.pemq = 1 if enable_em_quadrupole_radiation_reaction else 0
-        self.pgwq = 1 if enable_em_quadrupole_radiation_reaction else 0
+        self.pgwq = 1 if enable_gw_quadrupole_radiation_reaction else 0
 
     def P_GW_quadrupole(self, R):
         return 32 * (1 - self.lambda1 * self.lambda2
@@ -108,7 +112,8 @@ class two_charged_body_problem:
         # before the evolution so that we can consider the points we already
         # have "midpoints"
 
-        R0_fake = odeint(self.evolution_equation, self.R[0], [self.t[0], self.t[0] + self.R[0] * self.dt_R])[-1][0]
+        R0_fake = odeint(self.evolution_equation, self.R[0],
+                         [self.t[0], self.t[0] + self.R[0] * self.dt_R])[-1][0]
 
         R_fake = np.append(R0_fake, self.R)
         # t is needed for total energies
@@ -121,11 +126,18 @@ class two_charged_body_problem:
 
         self.GW_frequencies = self.GW_frequency(self.R)
         self.GW_angular_velocities = self.GW_angular_velocity(self.R)
-        self.GW_phases = np.cumsum(self.GW_angular_velocities * delta_R / -self.evolution_equation(self.R, 0))
+        self.GW_phases = np.cumsum(self.GW_angular_velocities * delta_R /
+                                   -self.evolution_equation(self.R, 0))
 
-        h_plus_rex = 4 * ((1 - self.lambda1 * self.lambda2) * self.M_c) ** (5/3) * (np.pi * self.GW_frequencies)**(2/3) * np.cos(self.GW_phases)
+        # Maggiore (4.29)
+        h0_rex = 4 * ((1 - self.lambda1 * self.lambda2) * self.M_c)**(
+            5 / 3) * (np.pi * self.GW_frequencies)**(2 / 3)
+
+        h_plus_rex = h0_rex * np.cos(self.GW_phases)
+        h_cross_rex = h0_rex * np.sin(self.GW_phases)
 
         self.hp_rex = h_plus_rex
+        self.hc_rex = h_cross_rex
 
         # Equation (4.22) in Maggiore
         self.GW_cycles = np.cumsum(self.GW_frequencies * delta_t)
@@ -140,7 +152,6 @@ class two_charged_body_problem:
         if (self.output_in_cgs):
             self.GW_frequencies *= self.geom_freq_to_Hz
             self.GW_angular_velocities *= self.geom_freq_to_Hz
-            self.GW_phases *= self.geom_freq_to_Hz
             self.t *= self.geom_time_to_s
             self.inst_P_EM_dipole *= self.geom_lum_to_erg_per_s
             self.inst_P_EM_quadrupole *= self.geom_lum_to_erg_per_s
@@ -149,10 +160,16 @@ class two_charged_body_problem:
             self.E_EM_quadrupole *= self.geom_energy_to_erg
             self.E_GW_quadrupole *= self.geom_energy_to_erg
 
-    def solve(self,
-              initial_separation=10,  # Units of total_mass
-              integration_step=0.005,  # Units of separation
-              final_separation=4):  # Units of total_mass
+        self.inst_P_EM = self.inst_P_EM_dipole + self.inst_P_EM_quadrupole
+        self.inst_P_GW = self.inst_P_GW_quadrupole
+        self.E_EM = self.E_EM_dipole + self.E_EM_quadrupole
+        self.E_GW = self.E_GW_quadrupole
+
+    def solve(
+            self,
+            initial_separation=10,  # Units of total_mass
+            integration_step=0.005,  # Units of separation
+            final_separation=4):  # Units of total_mass
         # Initial separation
         self.R_initial = initial_separation * self.M_tot
         # Integration step (in units of R)
@@ -168,8 +185,10 @@ class two_charged_body_problem:
 
         while True:
             dt = self.R[-1] * self.dt_R
-            R_new = odeint(self.evolution_equation, self.R[-1], [self.t[-1], self.t[-1] + dt])[-1][0]
-            self.R, self.t = np.append(self.R, R_new), np.append(self.t, self.t[-1] + dt)
+            R_new = odeint(self.evolution_equation, self.R[-1],
+                           [self.t[-1], self.t[-1] + dt])[-1][0]
+            self.R, self.t = np.append(self.R, R_new), np.append(
+                self.t, self.t[-1] + dt)
             if R_new < self.R_final:
                 break
 
@@ -181,33 +200,22 @@ class two_charged_body_problem:
         """
         return self.t[np.argmin(np.abs(self.GW_frequencies - freq))]
 
-    def index_at_t(self, t):
+    def index_at_time(self, t):
         return np.argmin(np.abs(self.t - t))
 
+    def quantity_in_t_range(self, quantity, t_min, t_max):
+        """ Use cgs if output_cgs is True """
+        i_min, i_max = self.index_at_time(t_min), self.index_at_time(t_max)
+        return quantity[i_max] - quantity[i_min]
+
     def E_EM_dipole_t_range(self, t_min, t_max):
-        """
-        Use cgs if output_cgs is True
-        """
-        i_min, i_max = self.index_at_t(t_min), self.index_at_t(t_max)
-        return self.E_EM_dipole[i_max] - self.E_EM_dipole[i_min]
+        return self.quantity_in_t_range(self.E_EM_dipole, t_min, t_max)
 
     def E_EM_quadrupole_t_range(self, t_min, t_max):
-        """
-        Use cgs if output_cgs is True
-        """
-        i_min, i_max = self.index_at_t(t_min), self.index_at_t(t_max)
-        return self.E_EM_quadrupole[i_max] - self.E_EM_quadrupole[i_min]
+        return self.quantity_in_t_range(self.E_EM_quadrupole, t_min, t_max)
 
     def E_GW_quadrupole_t_range(self, t_min, t_max):
-        """
-        Use cgs if output_cgs is True
-        """
-        i_min, i_max = self.index_at_t(t_min), self.index_at_t(t_max)
-        return self.E_GW_quadrupole[i_max] - self.E_GW_quadrupole[i_min]
+        return self.quantity_in_t_range(self.E_GW_quadrupole, t_min, t_max)
 
     def GW_cycles_t_range(self, t_min, t_max):
-        """
-        Use cgs if output_cgs is True
-        """
-        i_min, i_max = self.index_at_t(t_min), self.index_at_t(t_max)
-        return self.GW_cycles[i_max] - self.GW_cycles[i_min]
+        return self.quantity_in_t_range(self.GW_cycles, t_min, t_max)

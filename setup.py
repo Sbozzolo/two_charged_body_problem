@@ -1,7 +1,7 @@
 from setuptools import setup
 
 setup(
-    name="two_charged_body_problem",
+    name="tcbp",
     version="0.1",
     author='Gabriele Bozzola',
     author_email='gabrielebozzola@arizona.edu',
