@@ -47,6 +47,7 @@ class two_charged_body_problem:
         self.geom_time_to_s = self.G_CGS * self.M_SOL_CGS / self.C_CGS**3 * total_mass
         self.geom_freq_to_Hz = 1 / self.geom_time_to_s
         self.geom_lum_to_erg_per_s = self.geom_energy_to_erg / self.geom_time_to_s
+        self.geom_angmom_to_erg_s = self.geom_energy_to_erg * self.geom_time_to_s
 
         # Now we can set M_tot to 1
         self.M_tot = 1
@@ -70,10 +71,18 @@ class two_charged_body_problem:
         return 32 * (1 - self.lambda1 * self.lambda2
                      )**3 * self.m1**2 * self.m2**2 * self.M_tot / (5 * R**5)
 
+    def J_GW_quadrupole(self, R):
+        # Maggiore (4.113) (re-arranged)
+        return self.P_GW_quadrupole(R) * np.sqrt(R**3 / (self.M * (1 - self.lambda1 * self.lambda2)))
+
     def P_EM_dipole(self, R):
         return 2 / 3 * (self.lambda1 - self.lambda2)**2 * (
             1 -
             self.lambda1 * self.lambda2)**2 * self.m1**2 * self.m2**2 / R**4
+
+    def J_EM_dipole(self, R):
+        # omega = ((1 - self.lambda1 * self.lambda2) * (R**3 / self.M))**0.5
+        return self.P_EM_dipole(R) * np.sqrt(R**3 / (self.M * (1 - self.lambda1 * self.lambda2)))
 
     def P_EM_quadrupole(self, R):
         return self.m1**2 * self.m2**2 / self.M_tot**2 * (
@@ -148,6 +157,13 @@ class two_charged_body_problem:
         self.E_EM_dipole = np.cumsum(self.inst_P_EM_dipole * delta_t)
         self.E_EM_quadrupole = np.cumsum(self.inst_P_EM_quadrupole * delta_t)
         self.E_GW_quadrupole = np.cumsum(self.inst_P_GW_quadrupole * delta_t)
+        self.inst_J_EM_dipole = self.J_EM_dipole(self.R)
+        self.inst_J_GW_quadrupole = self.J_GW_quadrupole(self.R)
+        self.E_EM_dipole = np.cumsum(self.inst_P_EM_dipole * delta_t)
+        self.E_EM_quadrupole = np.cumsum(self.inst_P_EM_quadrupole * delta_t)
+        self.E_GW_quadrupole = np.cumsum(self.inst_P_GW_quadrupole * delta_t)
+        self.J_EM_dipole = np.cumsum(self.inst_J_EM_dipole * delta_t)
+        self.J_GW_quadrupole = np.cumsum(self.inst_J_GW_quadrupole * delta_t)
 
         if (self.output_in_cgs):
             self.GW_frequencies *= self.geom_freq_to_Hz
@@ -159,11 +175,20 @@ class two_charged_body_problem:
             self.E_EM_dipole *= self.geom_energy_to_erg
             self.E_EM_quadrupole *= self.geom_energy_to_erg
             self.E_GW_quadrupole *= self.geom_energy_to_erg
+            # [J] = erg * s, [J]/[T] = erg
+            self.inst_J_EM_dipole *= self.geom_energy_to_erg
+            self.inst_J_GW_quadrupole *= self.geom_energy_to_erg
+            self.J_EM_dipole *= self.geom_angmom_to_erg_s
+            self.J_GW_quadrupole *= self.geom_angmom_to_erg_s
 
         self.inst_P_EM = self.inst_P_EM_dipole + self.inst_P_EM_quadrupole
         self.inst_P_GW = self.inst_P_GW_quadrupole
         self.E_EM = self.E_EM_dipole + self.E_EM_quadrupole
         self.E_GW = self.E_GW_quadrupole
+        self.inst_J_EM = self.inst_J_EM_dipole
+        self.inst_J_GW = self.inst_J_GW_quadrupole
+        self.J_EM = self.J_EM_dipole
+        self.J_GW = self.J_GW_quadrupole
 
     def solve(
             self,
